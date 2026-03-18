@@ -19,7 +19,9 @@ public interface MessagingService {
     }
 
     static MessagingService createProxy(Vertx vertx, String address) {
-        return new MessagingServiceVertxEBProxy(vertx, address);
+        return new io.vertx.serviceproxy.ServiceProxyBuilder(vertx)
+                .setAddress(address)
+                .build(MessagingService.class);
     }
 
     void getLastMessages(Handler<AsyncResult<List<JsonObject>>> resultHandler);

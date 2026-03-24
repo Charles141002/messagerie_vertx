@@ -1,22 +1,153 @@
 package io.vertx.messagerie_vertx;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.client.WebClientOptions;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
+import io.vertx.messagerie_vertx.database.MessagingService;
+import io.vertx.messagerie_vertx.database.MessagingServiceVertxProxyHandler;
+import io.vertx.ext.jdbc.JDBCClient;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 @ExtendWith(VertxExtension.class)
 public class TestMainVerticle {
 
+  private WebClient webClient;
+
+  // -----------------------------------------------------------------
+  // Setup : déploiement de l'application complète avant chaque test
+  // -----------------------------------------------------------------
   @BeforeEach
-  void deploy_verticle(Vertx vertx, VertxTestContext testContext) {
-    vertx.deployVerticle(new MainVerticle()).onComplete(testContext.succeeding(id -> testContext.completeNow()));
+  void deploy(Vertx vertx, VertxTestContext testContext) {
+    vertx.deployVerticle(new MainVerticle())
+        .onComplete(testContext.succeeding(id -> {
+          webClient = WebClient.create(vertx, new WebClientOptions().setDefaultPort(8888));
+          testContext.completeNow();
+        }));
   }
 
+  @AfterEach
+  void cleanup(Vertx vertx) {
+    if (webClient != null)
+      webClient.close();
+  }
+
+  // -----------------------------------------------------------------
+  // Test 1 : Vérifier que l'application démarre correctement
+  // -----------------------------------------------------------------
   @Test
-  void verticle_deployed(Vertx vertx, VertxTestContext testContext) throws Throwable {
+  void verticle_deployed(Vertx vertx, VertxTestContext testContext) {
+    // Si on arrive ici, le @BeforeEach s'est bien exécuté
     testContext.completeNow();
+  }
+
+  // -----------------------------------------------------------------
+  // Test 2 : GET /api/messages doit retourner un tableau JSON
+  // -----------------------------------------------------------------
+  @Test
+  void test_get_messages_returns_json_array(Vertx vertx, VertxTestContext testContext) {
+    webClient.get("/api/messages")
+        .send()
+        .onComplete(testContext.succeeding(response -> testContext.verify(() -> {
+          assertEquals(200, response.statusCode(), "Statut HTTP attendu : 200");
+          assertEquals("application/json", response.getHeader("content-type"),
+              "Content-Type attendu : application/json");
+          assertNotNull(response.bodyAsJsonArray(),
+              "Le corps de la réponse doit être un tableau JSON");
+          testContext.completeNow();
+        })));
+  }
+
+  // -----------------------------------------------------------------
+  // Test 3 : POST /api/messages doit enregistrer un message (201)
+  // -----------------------------------------------------------------
+  @Test
+  void test_post_message_returns_201(Vertx vertx, VertxTestContext testContext) {
+    JsonObject payload = new JsonObject()
+        .put("user_name", "TestUser")
+        .put("content", "Bonjour depuis les tests JUnit !");
+
+    webClient.post("/api/messages")
+        .putHeader("Content-Type", "application/json")
+        .sendJsonObject(payload)
+        .onComplete(testContext.succeeding(response -> testContext.verify(() -> {
+          assertEquals(201, response.statusCode(), "Statut HTTP attendu : 201");
+          testContext.completeNow();
+        })));
+  }
+
+  // -----------------------------------------------------------------
+  // Test 4 : POST /api/messages sans champs requis doit retourner 400
+  // -----------------------------------------------------------------
+  @Test
+  void test_post_message_bad_request(Vertx vertx, VertxTestContext testContext) {
+    JsonObject badPayload = new JsonObject().put("user_name", "SansContenu");
+
+    webClient.post("/api/messages")
+        .putHeader("Content-Type", "application/json")
+        .sendJsonObject(badPayload)
+        .onComplete(testContext.succeeding(response -> testContext.verify(() -> {
+          assertEquals(400, response.statusCode(), "Statut HTTP attendu : 400 pour payload invalide");
+          testContext.completeNow();
+        })));
+  }
+
+  // -----------------------------------------------------------------
+  // Test 5 : Insertion puis récupération via le MessagingService
+  // (teste la couche base de données directement)
+  // -----------------------------------------------------------------
+  @Test
+  void test_database_add_then_get_messages(Vertx vertx, VertxTestContext testContext) {
+    // On crée un client JDBC en mémoire (isolé du fichier de prod)
+    JDBCClient dbClient = JDBCClient.createShared(vertx, new JsonObject()
+        .put("url", "jdbc:hsqldb:mem:testdb_" + System.currentTimeMillis())
+        .put("driver_class", "org.hsqldb.jdbcDriver")
+        .put("max_pool_size", 5));
+
+    // Création de la table
+    dbClient.update("CREATE TABLE IF NOT EXISTS messages (" +
+        "id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, " +
+        "user_name VARCHAR(255), content VARCHAR(1000), timestamp BIGINT)", initRes -> {
+
+          if (initRes.failed()) {
+            testContext.failNow(initRes.cause());
+            return;
+          }
+
+          MessagingService service = new io.vertx.messagerie_vertx.database.MessagingServiceImpl(dbClient);
+
+          // Insertion d'un message
+          JsonObject msg = new JsonObject()
+              .put("user_name", "Alice")
+              .put("content", "Test message DB");
+
+          service.addMessage(msg, addRes -> {
+            if (addRes.failed()) {
+              testContext.failNow(addRes.cause());
+              return;
+            }
+            // Récupération des messages
+            service.getLastMessages(getRes -> {
+              testContext.verify(() -> {
+                assertTrue(getRes.succeeded(), "getLastMessages doit réussir");
+                assertFalse(getRes.result().isEmpty(), "La liste ne doit pas être vide");
+
+                // Le message inséré doit être présent
+                boolean found = getRes.result().stream()
+                    .anyMatch(m -> "Alice".equalsIgnoreCase(m.getString("USER_NAME")) ||
+                        "Alice".equalsIgnoreCase(m.getString("user_name")));
+                assertTrue(found, "Le message d'Alice doit être dans la base");
+                testContext.completeNow();
+              });
+            });
+          });
+        });
   }
 }

@@ -1,35 +1,155 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vert.x Messenger</title>
+    <title>Chat Vert.x</title>
+    <!-- Bibliothèques nécessaires pour SockJS et l'EventBus Vert.x -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vertx3-eventbus-client@3.9.4/vertx-eventbus.js"></script>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f0f2f5;
+            font-family: 'Arial', sans-serif;
+            padding: 20px;
+            background-color: #fafafa;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        #chat {
+            border: 1px solid #ccc;
+            height: 400px;
+            width: 100%;
+            max-width: 600px;
+            overflow-y: scroll;
+            padding: 10px;
+            margin-bottom: 20px;
+            background: #fff;
+        }
+
+        .message {
+            margin-bottom: 8px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 4px;
+        }
+
+        .username {
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .controls {
             display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
+            gap: 10px;
+            max-width: 600px;
         }
-        .container {
-            background: white;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            text-align: center;
+
+        input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
         }
-        h1 { color: #1c1e21; }
-        p { color: #65676b; }
+
+        #user_name {
+            width: 100px;
+        }
+
+        #content {
+            flex-grow: 1;
+        }
+
+        button {
+            padding: 8px 15px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #218838;
+        }
     </style>
 </head>
+
 <body>
-    <div class="container">
-        <h1>Vert.x Messenger</h1>
-        <p>Le serveur est en ligne !</p>
-        <p>Les étapes suivantes permettront d'afficher les messages ici.</p>
+    <h1>Messagerie Vert.x</h1>
+
+    <div id="chat"></div>
+
+    <div class="controls">
+        <input type="text" id="user_name" placeholder="Pseudo">
+        <input type="text" id="content" placeholder="Votre message...">
+        <button onclick="send()">Envoyer</button>
     </div>
+
+    <script>
+        const chatElement = document.getElementById('chat');
+
+        // Ajoute un message visuellement dans la liste
+        function appendMessage(msg) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            // Handles both JSON formats: lower-case from POST or upper-case from HSQLDB query
+            const userName = msg.user_name || msg.USER_NAME || 'Anonyme';
+            const content = msg.content || msg.CONTENT || '...';
+            div.innerHTML = `<span class="username">${userName}</span> : ${content}`;
+            chatElement.appendChild(div);
+            chatElement.scrollTop = chatElement.scrollHeight; // Scroll auto en bas
+        }
+
+        // 1. Charger les 20 derniers messages au démarrage
+        fetch('/api/messages')
+            .then(response => response.json())
+            .then(messages => {
+                // On les affiche dans le bon ordre (les plus anciens d'abord en haut)
+                messages.reverse().forEach(appendMessage);
+            })
+            .catch(err => console.error("Erreur chargement messages:", err));
+
+        // 2. Connexion temps réel via l'Event Bus (Bridge SockJS)
+        const eb = new EventBus('http://localhost:8888/chat');
+        eb.onopen = () => {
+            console.log("Connecté à l'Event Bus !");
+            eb.registerHandler('chat.updates', (err, message) => {
+                if (!err) {
+                    appendMessage(message.body);
+                }
+            });
+        };
+
+        // 3. Envoi de message via l'API REST
+        function send() {
+            const user_name = document.getElementById('user_name').value;
+            const content = document.getElementById('content').value;
+
+            if (!user_name || !content) {
+                alert("Veuillez remplir le pseudo et le message !");
+                return;
+            }
+
+            const payload = { user_name, content };
+
+            fetch('/api/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(res => {
+                if (res.ok) {
+                    appendMessage(payload); // Affichage immédiat pour l'expéditeur
+                    document.getElementById('content').value = ''; // On vide le champ message
+                }
+            }).catch(err => console.error("Erreur envoi:", err));
+        }
+
+        // Permet d'envoyer avec la touche Entrée
+        document.getElementById('content').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') send();
+        });
+    </script>
 </body>
+
 </html>

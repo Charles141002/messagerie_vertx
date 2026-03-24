@@ -1,4 +1,4 @@
-where javapackage io.vertx.messagerie_vertx.http;
+package io.vertx.messagerie_vertx.http;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -12,7 +12,7 @@ import io.vertx.ext.web.handler.StaticHandler;
 import io.vertx.ext.web.handler.sockjs.SockJSHandler;
 import io.vertx.ext.web.handler.sockjs.SockJSHandlerOptions;
 import io.vertx.ext.web.handler.sockjs.SockJSBridgeOptions;
-import io.vertx.ext.web.handler.sockjs.PermittedOptions;
+import io.vertx.ext.bridge.PermittedOptions;
 import io.vertx.messagerie_vertx.database.MessagingService;
 
 public class HttpServerVerticle extends AbstractVerticle {
@@ -33,11 +33,11 @@ public class HttpServerVerticle extends AbstractVerticle {
         // Configure SockJS bridge for real-time updates
         SockJSHandlerOptions sockJSOptions = new SockJSHandlerOptions().setHeartbeatInterval(1000);
         SockJSHandler sockJSHandler = SockJSHandler.create(vertx, sockJSOptions);
-        
+
         SockJSBridgeOptions bridgeOptions = new SockJSBridgeOptions()
                 .addInboundPermitted(new PermittedOptions().setAddress("chat.updates"))
                 .addOutboundPermitted(new PermittedOptions().setAddress("chat.updates"));
-        
+
         sockJSHandler.bridge(bridgeOptions);
         router.route("/chat/*").handler(sockJSHandler);
 
@@ -81,7 +81,7 @@ public class HttpServerVerticle extends AbstractVerticle {
             if (res.succeeded()) {
                 // Publish update to event bus for real-time (Step 4 preview)
                 vertx.eventBus().publish("chat.updates", message);
-                
+
                 context.response()
                         .setStatusCode(201)
                         .putHeader("content-type", "application/json")

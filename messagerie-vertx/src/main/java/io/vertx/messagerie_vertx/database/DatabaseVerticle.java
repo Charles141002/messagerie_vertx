@@ -5,7 +5,6 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
-import io.vertx.serviceproxy.ServiceBinder;
 
 public class DatabaseVerticle extends AbstractVerticle {
 
@@ -21,9 +20,8 @@ public class DatabaseVerticle extends AbstractVerticle {
         initializeDatabase()
                 .onSuccess(v -> {
                     MessagingService service = MessagingService.create(dbClient);
-                    new ServiceBinder(vertx)
-                            .setAddress("database-service-address")
-                            .register(MessagingService.class, service);
+                    vertx.eventBus().consumer("database-service-address",
+                            new MessagingServiceVertxProxyHandler(vertx, service));
                     startPromise.complete();
                 })
                 .onFailure(startPromise::fail);

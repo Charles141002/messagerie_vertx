@@ -1,0 +1,17 @@
+{
+    "name": "messagerie-vertx",
+    "version": "1.0.0",
+    "description": "Vert.x Messaging Application",
+    "scripts": {
+        "dev": "./mvnw clean compile exec:java",
+        "test": "./mvnw clean test",
+        "package": "./mvnw clean package"
+    },
+    "keywords": [
+        "vertx",
+        "java",
+        "messenger"
+    ],
+    "author": "",
+    "license": "ISC"
+}

@@ -1,4 +1,4 @@
-package io.vertx.messagerie_vertx.http;
+where javapackage io.vertx.messagerie_vertx.http;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -9,6 +9,10 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.StaticHandler;
+import io.vertx.ext.web.handler.sockjs.SockJSHandler;
+import io.vertx.ext.web.handler.sockjs.SockJSHandlerOptions;
+import io.vertx.ext.web.handler.sockjs.SockJSBridgeOptions;
+import io.vertx.ext.web.handler.sockjs.PermittedOptions;
 import io.vertx.messagerie_vertx.database.MessagingService;
 
 public class HttpServerVerticle extends AbstractVerticle {
@@ -25,6 +29,17 @@ public class HttpServerVerticle extends AbstractVerticle {
 
         // Body handler for POST requests
         router.route().handler(BodyHandler.create());
+
+        // Configure SockJS bridge for real-time updates
+        SockJSHandlerOptions sockJSOptions = new SockJSHandlerOptions().setHeartbeatInterval(1000);
+        SockJSHandler sockJSHandler = SockJSHandler.create(vertx, sockJSOptions);
+        
+        SockJSBridgeOptions bridgeOptions = new SockJSBridgeOptions()
+                .addInboundPermitted(new PermittedOptions().setAddress("chat.updates"))
+                .addOutboundPermitted(new PermittedOptions().setAddress("chat.updates"));
+        
+        sockJSHandler.bridge(bridgeOptions);
+        router.route("/chat/*").handler(sockJSHandler);
 
         // API Routes
         router.get("/api/messages").handler(this::getMessages);

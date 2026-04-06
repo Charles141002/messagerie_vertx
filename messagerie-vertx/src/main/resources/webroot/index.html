@@ -110,16 +110,17 @@
             })
             .catch(err => console.error("Erreur chargement messages:", err));
 
-        // 2. Connexion temps réel via l'Event Bus (Bridge SockJS)
-        const eb = new EventBus('http://localhost:8888/chat');
-        eb.onopen = () => {
-            console.log("Connecté à l'Event Bus !");
-            eb.registerHandler('chat.updates', (err, message) => {
-                if (!err) {
-                    appendMessage(message.body);
-                }
-            });
-        };
+        // 2. Mise à jour "temps réel" via Polling (Fallback car SockJS bridge est instable)
+        setInterval(() => {
+            fetch('/api/messages')
+                .then(response => response.json())
+                .then(messages => {
+                    // On efface et on réaffiche tout pour la simplicité (Mandatory only)
+                    chatElement.innerHTML = '';
+                    messages.reverse().forEach(appendMessage);
+                })
+                .catch(err => console.error("Erreur polling:", err));
+        }, 2000);
 
         // 3. Envoi de message via l'API REST
         function send() {
